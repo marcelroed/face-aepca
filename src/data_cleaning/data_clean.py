@@ -102,7 +102,7 @@ def warp_faces_to_features(images, face_features, avg_face):
             mask[i] = False
             continue
 
-        warped_and_scaled[i] = wrp
+        warped_and_scaled[i] = (wrp * 255.0).astype(np.uint8)
     print(f'Removed {np.sum(~mask)}/{mask.shape[0]}')
     return warped_and_scaled, mask
 

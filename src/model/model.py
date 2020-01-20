@@ -4,6 +4,9 @@ import tensorflow.keras as keras
 from os import listdir
 import re
 import matplotlib.pyplot as plt
+from src.model.configure import tf_gpu
+
+tf_gpu()
 
 # Hyperparameters
 LEARNING_RATE = 0.1
@@ -63,34 +66,46 @@ def create_imagenet_model():
 class AutoEncoder(keras.Model):
     def __init__(self):
         super(AutoEncoder, self).__init__()
-        self.conv1 = keras.layers.Conv2D(filters=120, kernel_size=(3, 3), padding='same', activation=keras.activations.relu)
+        self.conv1 = keras.layers.Conv2D(filters=120, kernel_size=(3, 3), padding='same',
+                                         activation=keras.activations.relu)
         self.maxpool1 = keras.layers.MaxPooling2D(pool_size=(2, 2), strides=(2, 2), padding='same')
-        self.conv2 = keras.layers.Conv2D(filters=160, kernel_size=(3, 3), padding='same', activation=keras.activations.relu)
+        self.conv2 = keras.layers.Conv2D(filters=160, kernel_size=(3, 3), padding='same',
+                                         activation=keras.activations.relu)
         self.maxpool2 = keras.layers.MaxPooling2D(pool_size=(2, 2), strides=(2, 2), padding='same')
-        self.conv3 = keras.layers.Conv2D(filters=200, kernel_size=(3, 3), padding='same', activation=keras.activations.relu)
+        self.conv3 = keras.layers.Conv2D(filters=200, kernel_size=(3, 3), padding='same',
+                                         activation=keras.activations.relu)
         self.maxpool3 = keras.layers.MaxPooling2D(pool_size=(2, 2), strides=(2, 2), padding='same')
-        self.conv4 = keras.layers.Conv2D(filters=240, kernel_size=(3, 3), padding='same', activation=keras.activations.relu)
+        self.conv4 = keras.layers.Conv2D(filters=240, kernel_size=(3, 3), padding='same',
+                                         activation=keras.activations.relu)
         self.maxpool4 = keras.layers.MaxPooling2D(pool_size=(2, 2), strides=(2, 2), padding='same')
-        self.flatten = keras.layers.Reshape([-1, 4 * 4 * 240])
+        self.flatten = keras.layers.Reshape([4 * 4 * 240])
         self.reduce_inner = keras.layers.Dense(300)
         self.activate_inner = keras.layers.Activation(keras.activations.relu)
         self.expand_inner = keras.layers.Dense(4 * 4 * 240)
-        self.un_flatten = keras.layers.Reshape([-1, 4, 4, 240])
-        self.up_sample = lambda s: lambda image: tf.image.resize_images(
-                image,
-                (s, s),
-                method=tf.image.ResizeMethod.NEAREST_NEIGHBOR,
-                align_corners=True,  # possibly important
-                preserve_aspect_ratio=True
+        self.un_flatten = keras.layers.Reshape([4, 4, 240])
+        self.up_sample = lambda s: lambda image: tf.image.resize(
+            image,
+            (s, s),
+            method=tf.image.ResizeMethod.NEAREST_NEIGHBOR,
+            preserve_aspect_ratio=True
         )
-        self.conv5 = keras.layers.Conv2D(filters=200, kernel_size=(3, 3), padding='same', activation=keras.activations.relu)
-        self.conv6 = keras.layers.Conv2D(filters=160, kernel_size=(3, 3), padding='same', activation=keras.activations.relu)
-        self.conv7 = keras.layers.Conv2D(filters=120, kernel_size=(3, 3), padding='same', activation=keras.activations.relu)
-        self.conv8 = keras.layers.Conv2D(filters=15, kernel_size=(3, 3), padding='same', activation=keras.activations.relu)
+        self.conv5 = keras.layers.Conv2D(filters=200, kernel_size=(3, 3), padding='same',
+                                         activation=keras.activations.relu)
+        self.conv6 = keras.layers.Conv2D(filters=160, kernel_size=(3, 3), padding='same',
+                                         activation=keras.activations.relu)
+        self.conv7 = keras.layers.Conv2D(filters=120, kernel_size=(3, 3), padding='same',
+                                         activation=keras.activations.relu)
+        self.conv8 = keras.layers.Conv2D(filters=15, kernel_size=(3, 3), padding='same',
+                                         activation=keras.activations.relu)
         self.conv9 = keras.layers.Conv2D(filters=3, kernel_size=(3, 3), padding='same', activation=None)
         self.decode = keras.layers.Activation(keras.activations.sigmoid)
 
-    def call(self, x):
+    def call(self, x, **kwargs):
+        x = self.enc(x)
+        x = self.dec(x)
+        return x
+
+    def enc(self, x):
         x = self.conv1(x)
         x = self.maxpool1(x)
         x = self.conv2(x)
@@ -102,6 +117,9 @@ class AutoEncoder(keras.Model):
         x = self.flatten(x)
         x = self.reduce_inner(x)
         x = self.activate_inner(x)
+        return x
+
+    def dec(self, x):
         x = self.expand_inner(x)
         x = self.un_flatten(x)
         x = self.up_sample(8)(x)
@@ -117,37 +135,55 @@ class AutoEncoder(keras.Model):
         return x
 
 
-# Load data
-images = np.load(f'{data_dir}processed_images.npy')[:3].astype(float) / 255.0
-print(images[0])
+if __name__ == '__main__':
+    # Load data
+    images = np.load(f'{data_dir}processed_images.npy')[:].astype(float) / 255.0
+    print(images[0])
 
-model = AutoEncoder()
+    model = AutoEncoder()
 
-model.compile(optimizer='adam',
-              loss=keras.losses.SparseCategoricalCrossentropy(),
-              metrics=[keras.metrics.SparseCategoricalAccuracy()])
+    model.compile(optimizer='adam',
+                  loss=keras.losses.MeanSquaredError(),
+                  metrics=[])
 
+    model_no = int(re.search('([0-9]+)', max(listdir(model_dir))).groups()[0]) + 1 if len(listdir(model_dir)) else 0
 
-# Get partially trained model if it exists
-newest_model = keras.models.load_model(model_dir + max(listdir(model_dir))) if len(
-    listdir(model_dir)) and not retrain else create_imagenet_model()
+    history = model.fit(images,
+                        images,
+                        epochs=100,
+                        callbacks=[keras.callbacks.ModelCheckpoint(
+                            filepath=f'{model_dir}/model{str(model_no).zfill(3)}.h5',
+                            save_best_only=True
+                        )],
+                        validation_split=0.10
+                        )
 
+    model.save('model.h5')
 
-model_no = int(re.search('([0-9]+)', max(listdir(model_dir))).groups()[0]) + 1 if len(listdir(model_dir)) else 0
-print(f'model_no = {model_no}')
+    prediction = model.predict(images)
+    plt.imshow(prediction[5])
+    plt.show()
 
-# Train model
-history = newest_model.fit(images,
-                           images,
-                           epochs=100,
-                           callbacks=[keras.callbacks.ModelCheckpoint(
-                               filepath=f'{model_dir}/model{str(model_no).zfill(3)}.h5',
-                               save_best_only=True
-                           )],
-                           validation_split=0.10)
-
-
-print(newest_model.predict(images[:2]))
-
-# Save model
-newest_model.save('model.h5')
+    # Get partially trained model if it exists
+    # newest_model = keras.models.load_model(model_dir + max(listdir(model_dir))) if len(
+    #     listdir(model_dir)) and not retrain else create_imagenet_model()
+    #
+    #
+    # model_no = int(re.search('([0-9]+)', max(listdir(model_dir))).groups()[0]) + 1 if len(listdir(model_dir)) else 0
+    # print(f'model_no = {model_no}')
+    #
+    # # Train model
+    # history = newest_model.fit(images,
+    #                            images,
+    #                            epochs=100,
+    #                            callbacks=[keras.callbacks.ModelCheckpoint(
+    #                                filepath=f'{model_dir}/model{str(model_no).zfill(3)}.h5',
+    #                                save_best_only=True
+    #                            )],
+    #                            validation_split=0.10)
+    #
+    #
+    # print(newest_model.predict(images[:2]))
+    #
+    # # Save model
+    # newest_model.save('model.h5')

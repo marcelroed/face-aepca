@@ -37,11 +37,12 @@ plt.show()
 
 # print(out_images.shape)
 
-for image, predicted in zip(images, out_images):
+for image, predicted, pcs in zip(images, out_images, simplified):
     scaled_image = cv2.resize(image*255.0, (0, 0), fx=4, fy=4).astype(np.uint8)
     # print(scaled_image)
     # print(scaled_image.shape)
     print(type(predicted))
+    print(pcs[:20])
     scaled_prediction = cv2.resize(predicted.numpy()*255.0, (0, 0), fx=4, fy=4).astype(np.uint8)
 
     cv2.imshow('Image', scaled_image)

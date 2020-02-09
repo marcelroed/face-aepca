@@ -8,26 +8,39 @@ import cv2
 import numpy as np
 
 import aiohttp
-import aiofiles
 import asyncio
 import requests
 
 event_loop = asyncio.get_event_loop()
 
+DATASETS = ['famousbirthdays', 'ntnu']
+
+def get_urls(dataset):
+    if dataset not in DATASETS:
+        raise ValueError()
+
+    if dataset == 'famousbirthdays':
+        return [f'https://famousbirthdays.com/{month_name[month].lower()}{day}.html' for month, day in all_days_of_year()]
+
+    if dataset == 'ntnu':
+        return list(open('../../data/ntnu/urls.txt').read().splitlines())
 
 def all_days_of_year():
     for month in range(1, 13):
         for day in range(1, monthrange(2020, month)[1] + 1):
-            yield (month, day)
+            yield month, day
+
 
 def chunks(l, n):
     """Yield successive n-sized chunks from l."""
     for i in range(0, len(l), n):
         yield l[i:i + n]
 
-def get_all_data(to_location):
+
+def get_all_data(dataset):
+    to_location = f'../../data/{dataset}/'
+    urls = get_urls(dataset)
     people = []
-    urls = [f'https://famousbirthdays.com/{month_name[month].lower()}{day}.html' for month, day in all_days_of_year()]
     htmls = []
     # Fetch HTML pages
     for chunk in tqdm(chunks(urls, 63), 'Fetching HTML Pages'):
@@ -36,7 +49,7 @@ def get_all_data(to_location):
     # Parse names and image urls from htmls
     image_urls, names = [], []
     for html in tqdm(htmls, 'Parsing HTML'):
-        new_urls, new_names = people_from_html(html)
+        new_urls, new_names = people_from_html(html, dataset)
         image_urls += new_urls
         names += new_names
     print([name for name in image_urls if not '.jpg' in name])
@@ -83,19 +96,31 @@ def fetch_html(url):
     return requests.get(url).content
 
 
-def people_from_html(html: str):
+def people_from_html(html: str, dataset):
     soup = BeautifulSoup(html, 'html.parser')
-    people_elements: List[Tag] = soup.find_all('a', {'class': 'face person-item'})
-    image_urls, names = [], []
-    for el in people_elements:
-        name_element = el.find('div', {'class': 'name'})
-        name = re.split(r'[,(]', name_element.text.strip())[0].strip()  # Remove white characters and age
-        styles = el.attrs['style']
-        image_url = re.findall(r'url\((.*)\)', styles, re.MULTILINE)
-        if image_url[0] != r'https://www.famousbirthdays.com/faces/large-default.jpg':
-            image_urls.append(image_url[0])
-            names.append(name)
-    return image_urls, names
+    if dataset == 'famousbirthdays':
+        people_elements: List[Tag] = soup.find_all('a', {'class': 'face person-item'})
+        image_urls, names = [], []
+        for el in people_elements:
+            name_element = el.find('div', {'class': 'name'})
+            name = re.split(r'[,(]', name_element.text.strip())[0].strip()  # Remove white characters and age
+            styles = el.attrs['style']
+            image_url = re.findall(r'url\((.*)\)', styles, re.MULTILINE)
+            if image_url[0] != r'https://www.famousbirthdays.com/faces/large-default.jpg':
+                image_urls.append(image_url[0])
+                names.append(name)
+        return image_urls, names
+    elif dataset == 'ntnu':
+        print(html)
+        name_head: Tag = soup.find('h1', {'class': 'displayName'})
+        image_element: Tag = soup.find('img', {'id': 'personalProfileImage'})
+        if image_element is None or name_head is None:
+            print('Failed to get data')
+            return [], []
+        name = next(name_head.children).text.strip()
+        image_url = image_element.get('src')
+        return [image_url], [name]
+
 
 
 def load_image(image_url: str):
@@ -107,4 +132,4 @@ def load_image(image_url: str):
 
 
 if __name__ == '__main__':
-    get_all_data('../../data/famousbirthdays/')
+    get_all_data('ntnu')

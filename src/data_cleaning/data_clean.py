@@ -10,7 +10,7 @@ IDEAL_POS = np.array([32, 21])
 IDEAL_SIZE = 24
 IMAGE_SHAPE = (64, 64)
 
-data_dir = '../../data/famousbirthdays/'
+data_dir = '../../data/ntnu/'
 
 
 def clean_data():
